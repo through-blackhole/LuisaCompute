@@ -3,7 +3,7 @@ if not is_mode("debug") then
     _config_project({
         project_kind = "shared"
     })
-    set_pcxxheader("src/pch.h")
+    set_pcxxheader("src/lc_clangcxx_pch.h")
     add_headerfiles("../../include/luisa/clangcxx/**.h")
     add_files("src/**.cpp")
     on_load(function(target, opt)
@@ -23,7 +23,7 @@ if not is_mode("debug") then
         target:add("defines", "LC_CLANGCXX_EXPORT_DLL")
         target:add("deps", "lc-core", "lc-runtime", "lc-vstl")
         if is_plat("windows") then
-            target:add("syslinks", "Version", "advapi32", "Shcore", "user32", "shell32", "Ole32", 'Ws2_32', "ntdll", {
+            target:add("syslinks", "Version", "advapi32", "Shcore", "user32", "shell32", "Ole32", 'Ws2_32', 'ntdll', {
                 public = true
             })
         elseif is_plat("linux") then

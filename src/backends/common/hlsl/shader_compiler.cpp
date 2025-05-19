@@ -66,7 +66,6 @@ CompileResult ShaderCompiler::compile(
         code.size(),
         CP_ACP};
     ComPtr<IDxcResult> compileResult;
-
     LC_DXC_THROW_IF_FAILED(compiler()->Compile(
         &buffer,
         args.data(),
@@ -96,7 +95,11 @@ static void AddCompileFlags(Vec &args) {
          L"-no-warnings",
          L"-enable-16bit-types",
          DXC_ARG_PACK_MATRIX_ROW_MAJOR,
-         L"-HV 2021"});
+         L"-HV 2021",
+#ifndef NDEBUG
+         DXC_ARG_DEBUG
+#endif
+        });
 }
 template<typename Vec>
 static void AddUnsafeMathFlags(Vec &args) {
@@ -170,7 +173,7 @@ RasterBin ShaderCompiler::compile_raster(
     args.emplace_back(L"/DVS");
     RasterBin bin;
     bin.vertex = compile(code, args);
-    args.resize_uninitialized(size);
+    luisa::vector_resize(args, size);
     smStr.clear();
     smStr << L"ps_" << GetSM(shaderModel);
     args.emplace_back(smStr.c_str());

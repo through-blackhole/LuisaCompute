@@ -116,11 +116,12 @@ private:
 #endif
 
 private:
-    [[nodiscard]] ShaderCreationInfo _load_or_compile_shader(luisa::string name,
-                                                    const string &source, const ShaderOption &option,
-                                                    luisa::span<const char *const> nvrtc_options,
-                                                    const CUDAShaderMetadata &expected_metadata,
-                                                    luisa::vector<ShaderDispatchCommand::Argument> bound_arguments) noexcept;
+    [[nodiscard]] ShaderCreationInfo _load_or_compile_shader(
+        luisa::string name,
+        const string &source, const ShaderOption &option,
+        luisa::span<const char *const> nvrtc_options,
+        const CUDAShaderMetadata &expected_metadata,
+        luisa::vector<ShaderDispatchCommand::Argument> bound_arguments) noexcept;
 
 public:
     CUDADevice(Context &&ctx, size_t device_id, const BinaryIO *io) noexcept;
@@ -147,7 +148,8 @@ public:
     BufferCreationInfo create_buffer(const Type *element, size_t elem_count, void *external_memory) noexcept override;
     BufferCreationInfo create_buffer(const ir::CArc<ir::Type> *element, size_t elem_count, void *external_memory) noexcept override;
     void destroy_buffer(uint64_t handle) noexcept override;
-    ResourceCreationInfo create_texture(PixelFormat format, uint dimension, uint width, uint height, uint depth, uint mipmap_levels, bool simultaneous_access, bool allow_raster_target) noexcept override;
+    ResourceCreationInfo create_texture(PixelFormat format, uint dimension, uint width, uint height, uint depth, uint mipmap_levels,
+                                        void* external_native_handle, bool simultaneous_access, bool allow_raster_target) noexcept override;
     void destroy_texture(uint64_t handle) noexcept override;
     ResourceCreationInfo create_bindless_array(size_t size) noexcept override;
     void destroy_bindless_array(uint64_t handle) noexcept override;
@@ -186,4 +188,3 @@ public:
 };
 
 }// namespace luisa::compute::cuda
-

@@ -48,7 +48,8 @@ public:
     ResourceCreationInfo create_texture(
         PixelFormat format, uint dimension,
         uint width, uint height, uint depth,
-        uint mipmap_levels, bool simultaneous_access, bool allow_raster_target) noexcept override;
+        uint mipmap_levels, void *external_native_handle,
+        bool simultaneous_access, bool allow_raster_target) noexcept override;
     void destroy_texture(uint64_t handle) noexcept override;
 
     // bindless array
@@ -102,7 +103,7 @@ public:
     luisa::string query(luisa::string_view property) noexcept override;
     DeviceExtension *extension(luisa::string_view name) noexcept override;
     void set_name(luisa::compute::Resource::Tag resource_tag, uint64_t resource_handle, luisa::string_view name) noexcept override;
-
+    luisa::string_view get_name(uint64_t resource_handle) const noexcept override;
     // sparse buffer
     [[nodiscard]] SparseBufferCreationInfo create_sparse_buffer(const Type *element, size_t elem_count) noexcept override;
 

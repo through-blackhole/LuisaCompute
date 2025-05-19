@@ -3,9 +3,9 @@ _config_project({
     project_kind = "shared",
     batch_size = 8
 })
-add_deps("lc-runtime", "lc-vstl", "lc-hlsl-builtin")
-add_files("**.cpp", "../common/hlsl/*.cpp")
-add_headerfiles("**.h", "../common/default_binary_io.h", "../common/hlsl/*.h")
+add_deps("lc-runtime", "lc-vstl", "lc-hlsl-codegen")
+add_files("**.cpp")
+add_headerfiles("**.h", "../common/default_binary_io.h")
 add_includedirs("./")
 add_syslinks("D3D12", "dxgi")
 if is_plat("windows") then
@@ -37,16 +37,8 @@ on_load(function(target)
         end
     end
 end)
-set_pcxxheader("pch.h")
+set_pcxxheader("lc_dx_pch.h")
 add_rules('lc_install_sdk', {
     libnames = {'dx_sdk'}
 })
-if get_config("lc_xrepo_dir") then
-    add_packages("zlib", {
-        public = false,
-        inherit = false
-    })
-else
-    add_deps("zlib")
-end
 target_end()

@@ -157,7 +157,7 @@ static BasicBlock *duplicate_basic_block_for_ray_query_loop_dispatch_branch(cons
                                                                             luisa::vector<std::pair<const PhiInst *, PhiInst *>> &phi_nodes,
                                                                             RayQueryLowerPassValueResolver &resolver) noexcept {
     auto bb = static_cast<BasicBlock *>(resolver.resolve(original));
-    Builder b;
+    XIRBuilder b;
     b.set_insertion_point(bb);
     for (auto &&inst : original->instructions()) {
         // special case: branch to the merge block
@@ -169,7 +169,7 @@ static BasicBlock *duplicate_basic_block_for_ray_query_loop_dispatch_branch(cons
             phi_nodes.emplace_back(static_cast<const PhiInst *>(&inst), dup_phi);
             resolver.emplace(&inst, dup_phi);
         } else {
-            auto dup_inst = inst.clone(b, resolver);
+            auto dup_inst = inst.clone_with_metadata(b, resolver);
             LUISA_DEBUG_ASSERT(dup_inst != nullptr, "Failed to duplicate instruction.");
             resolver.emplace(&inst, dup_inst);
         }
@@ -219,7 +219,7 @@ static BasicBlock *duplicate_basic_block_for_ray_query_loop_dispatch_branch(cons
             LUISA_ASSERT(!already_returned, "Multiple return instructions in the branch block.");
             already_returned = true;
             // generate store instructions for out values
-            Builder b;
+            XIRBuilder b;
             b.set_insertion_point(bb->terminator()->prev());
             for (auto out_value : capture_list.out_values) {
                 auto out_arg = function->create_reference_argument(out_value->type());
@@ -266,7 +266,7 @@ static void lower_ray_query_loop(Function *function, RayQueryLoopInst *loop, Ray
     }
     // create variables for out values
     if (!capture_list.out_values.empty()) {
-        Builder b;
+        XIRBuilder b;
         b.set_insertion_point(&function->definition()->body_block()->instructions().front());
         for (auto out_value : capture_list.out_values) {
             auto variable = b.alloca_local(out_value->type());
@@ -275,9 +275,13 @@ static void lower_ray_query_loop(Function *function, RayQueryLoopInst *loop, Ray
         }
     }
     // create ray query pipeline
-    Builder b;
+    XIRBuilder b;
     b.set_insertion_point(loop->prev());
+    auto loop_parent_block = loop->parent_block();
     auto pipeline = b.ray_query_pipeline(subgraph.query_object, on_surface, on_procedural, captured_args);
+    // remove the loop and record the change
+    loop->remove_self();
+    info.lowered_loops.emplace(loop, pipeline);
     // load the out values and replace the uses
     auto out_variables = luisa::span{captured_args}.subspan(capture_list.in_values.size());
     for (auto i = 0u; i < capture_list.out_values.size(); i++) {
@@ -287,18 +291,27 @@ static void lower_ray_query_loop(Function *function, RayQueryLoopInst *loop, Ray
         out_value->add_comment("load from ray query output alloca");
         old_out_value->replace_all_uses_with(out_value);
     }
-    // remove the loop and move up instructions from the merge block
-    loop->remove_self();
-    luisa::vector<Instruction *> merge_instructions;
-    for (auto &&inst : merge_block->instructions()) {
-        merge_instructions.emplace_back(&inst);
-    }
-    for (auto inst : merge_instructions) {
+    // rewrite the PHI nodes in merge block's successors
+    merge_block->traverse_successors(false, [&](BasicBlock *succ) noexcept {
+        LUISA_ASSERT(succ != merge_block, "Invalid successor.");
+        succ->traverse_instructions([&](Instruction *inst) noexcept {
+            if (inst->isa<PhiInst>()) {
+                auto phi = static_cast<PhiInst *>(inst);
+                for (auto i = 0u; i < phi->incoming_count(); i++) {
+                    if (auto incoming = phi->incoming(i); incoming.block == merge_block) {
+                        phi->set_incoming(i, incoming.value, loop_parent_block);
+                    }
+                }
+            }
+        });
+    });
+    // move the instructions from the merge block to the loop parent block
+    while (!merge_block->instructions().empty()) {
+        auto inst = &merge_block->instructions().front();
+        LUISA_ASSERT(!inst->isa<PhiInst>(), "Invalid phi instruction in merge block.");
         inst->remove_self();
         b.append(inst);
     }
-    // record the change
-    info.lowered_loops.emplace(loop, pipeline);
 }
 
 static void collect_blocks_in_ray_query_dispatch_branch(BasicBlock *block, BasicBlock *dispatch_block,
@@ -323,7 +336,7 @@ static void replace_phi_uses_with_local_load_in_blocks(BasicBlock *block, PhiIns
             }
         }
         if (!local_uses.empty()) {
-            Builder b;
+            XIRBuilder b;
             b.set_insertion_point(block->instructions().head_sentinel());
             auto phi_load = b.load(phi->type(), phi_alloca);
             phi_load->add_comment("load from phi alloca");
@@ -369,7 +382,7 @@ static void lower_phi_nodes_in_loop_dispatch_block(FunctionDefinition *f, RayQue
         collect_blocks_in_ray_query_dispatch_branch(surface_block, dispatch_block, surface_blocks);
         collect_blocks_in_ray_query_dispatch_branch(procedural_block, dispatch_block, procedural_blocks);
         // lower the phi nodes to local variables
-        Builder b;
+        XIRBuilder b;
         for (auto phi : phi_nodes) {
             b.set_insertion_point(f->body_block()->instructions().head_sentinel());
             auto phi_alloca = b.alloca_local(phi->type());

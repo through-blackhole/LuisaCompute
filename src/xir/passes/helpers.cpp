@@ -16,7 +16,7 @@ Value *trace_pointer_base_value(Value *pointer) noexcept {
 AllocaInst *trace_pointer_base_local_alloca_inst(Value *pointer) noexcept {
     if (auto base = trace_pointer_base_value(pointer);
         base != nullptr && base->isa<AllocaInst>() &&
-        static_cast<AllocaInst *>(base)->space() == AllocSpace::LOCAL) {
+        static_cast<AllocaInst *>(base)->op() == AllocaOp::LOCAL) {
         return static_cast<AllocaInst *>(base);
     }
     return nullptr;
@@ -38,23 +38,29 @@ bool remove_redundant_phi_instruction(PhiInst *phi) noexcept {
         }
         return false;
     };
-    auto all_same = true;
-    auto any_undef = false;
+    auto all_same_except_undef = true;
+    auto undef_incoming = static_cast<Value *>(nullptr);
     auto same_incoming = static_cast<Value *>(nullptr);
+    // check if all incoming values are the same
     for (auto value_use : phi->incoming_value_uses()) {
-        auto value = value_use->value();
-        LUISA_DEBUG_ASSERT(value != nullptr, "Invalid incoming value.");
-        if (same_incoming == nullptr || same_incoming->isa<Undefined>()) { same_incoming = value; }
-        if (value->isa<Undefined>()) {
-            any_undef = true;
-        } else if (same_incoming != value) {
-            all_same = false;
-            break;
+        LUISA_DEBUG_ASSERT(value_use->value() != nullptr, "Invalid incoming value.");
+        if (auto value = value_use->value(); value->isa<Undefined>()) {
+            undef_incoming = value;
+        } else {
+            // if we haven't seen any incoming value yet, set it as the same incoming
+            if (same_incoming == nullptr) { same_incoming = value; }
+            // otherwise, check if the current incoming value is the same as the previous one
+            if (same_incoming != value) {
+                all_same_except_undef = false;
+                break;
+            }
         }
     }
-    if (all_same && (!any_undef || is_invariant(same_incoming))) {
+    if (all_same_except_undef && is_invariant(same_incoming)) {
         if (same_incoming != nullptr) {
             phi->replace_all_uses_with(same_incoming);
+        } else if (undef_incoming != nullptr) {
+            phi->replace_all_uses_with(undef_incoming);
         } else {
             LUISA_DEBUG_ASSERT(phi->use_list().empty(), "Invalid phi node.");
         }
@@ -68,7 +74,7 @@ void lower_phi_node_to_local_variable(PhiInst *phi) noexcept {
     if (!remove_redundant_phi_instruction(phi)) {
         auto f = phi->parent_function();
         LUISA_DEBUG_ASSERT(f != nullptr && f->definition() != nullptr, "Invalid function.");
-        Builder b;
+        XIRBuilder b;
         // create alloca at the beginning of the function
         b.set_insertion_point(f->definition()->body_block()->instructions().head_sentinel());
         auto phi_alloca = b.alloca_local(phi->type());
@@ -98,7 +104,7 @@ void hoist_alloca_instructions_to_entry_block(FunctionDefinition *f) noexcept {
         }
     });
     if (!collected.empty()) {
-        Builder b;
+        XIRBuilder b;
         b.set_insertion_point(f->body_block()->instructions().head_sentinel());
         for (auto inst : collected) {
             inst->remove_self();

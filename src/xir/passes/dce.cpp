@@ -136,8 +136,10 @@ void eliminate_instructions_in_unreachable_blocks(const luisa::unordered_set<Bas
     for (auto b : blocks) {
         // replace the terminator with an unreachable instruction if it's not already
         if (!is_block_terminated_by_unreachable(b)) {
-            b->terminator()->remove_self();
-            xir::Builder builder;
+            auto old_terminator = b->terminator();
+            old_terminator->remove_self();
+            info.removed_instructions.emplace(old_terminator);
+            xir::XIRBuilder builder;
             builder.set_insertion_point(b);
             builder.unreachable_();
         }
@@ -225,19 +227,36 @@ void propagate_unreachable_marks_in_function(Function *function, DCEInfo &info) 
 void eliminate_unreachable_blocks_in_function(Function *function, DCEInfo &info) noexcept {
     if (auto definition = function->definition()) {
         luisa::unordered_set<BasicBlock *> reachable;
+        luisa::unordered_set<BasicBlock *> visited;
+        luisa::unordered_set<BasicBlock *> unreachable;
+        luisa::vector<BasicBlock *> work_list;
+        auto add_to_work_list = [&](BasicBlock *block) noexcept {
+            if (block != nullptr && visited.emplace(block).second) {
+                work_list.emplace_back(block);
+            }
+        };
         definition->traverse_basic_blocks([&](BasicBlock *block) noexcept {
             reachable.emplace(block);
+            add_to_work_list(block);
         });
-        luisa::unordered_set<BasicBlock *> unreachable;
-        for (auto b : reachable) {
-            // let's find out instructions users' blocks that are not in the reachable set
+        while (!work_list.empty()) {
+            auto b = work_list.back();
+            work_list.pop_back();
+            // check the block's predecessors
+            b->traverse_predecessors(true, [&](auto pred) noexcept {
+                if (!reachable.contains(pred)) {
+                    unreachable.emplace(pred);
+                    add_to_work_list(pred);
+                }
+            });
+            // let's find out instruction users' blocks that are not in the reachable set
             b->traverse_instructions([&](Instruction *inst) noexcept {
                 for (auto &&use : inst->use_list()) {
                     if (auto user = use.user(); user != nullptr && user->isa<Instruction>()) {
-                        auto user_inst = static_cast<Instruction *>(user);
-                        if (auto user_block = user_inst->parent_block();
+                        if (auto user_block = static_cast<Instruction *>(user)->parent_block();
                             user_block != nullptr && !reachable.contains(user_block)) {
                             unreachable.emplace(user_block);
+                            add_to_work_list(user_block);
                         }
                     }
                 }
@@ -297,6 +316,7 @@ void fix_phi_nodes_in_function(Function *function, luisa::vector<PhiInst *> &phi
                         valid_incomings.emplace_back(incoming);
                     }
                 }
+                LUISA_ASSERT(valid_incomings.size() == predecessors.size());
                 phi->set_incoming_count(valid_incomings.size());
                 for (auto i = 0u; i < valid_incomings.size(); i++) {
                     auto incoming = valid_incomings[i];

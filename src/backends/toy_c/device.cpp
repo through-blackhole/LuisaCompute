@@ -34,7 +34,7 @@ public:
                 LUISA_ERROR("Dynamic module {} not found.", module_name);
             }
             auto func_name = ext->set_func_table_name();
-            vstd::func_ptr_t<ToyCDeviceConfig::FuncTable *(void *)> set_functable = dyn_module.function<ToyCDeviceConfig::FuncTable *(void *)>(func_name);
+            vstd::func_ptr_t<ToyCDeviceConfig::FuncTable *(void *)> set_functable = dyn_module.function<ToyCDeviceConfig::FuncTable *(void *)>(func_name.c_str());
             if (!set_functable) [[unlikely]] {
                 LUISA_ERROR("{} not found.", func_name);
             }
@@ -160,7 +160,7 @@ public:
     ResourceCreationInfo create_texture(
         PixelFormat format, uint dimension,
         uint width, uint height, uint depth,
-        uint mipmap_levels, bool simultaneous_access, bool allow_raster_target) noexcept override {
+        uint mipmap_levels, void *external_native_handle, bool simultaneous_access, bool allow_raster_target) noexcept override {
         LUISA_ERROR("Not supported.");
         return {};
     }

@@ -7,7 +7,7 @@ if is_plat("macosx") then
 else
     _config_project({
         project_kind = "static",
-        no_rtti = true,
+--         no_rtti = true,
         batch_size = 4
     })
     add_defines("LUISA_VSTL_STATIC_LIB", {
@@ -15,7 +15,7 @@ else
     })
 end
 add_deps("lc-core", "lmdb")
-set_pcxxheader("pch.h")
+set_pcxxheader("lc_vstl_pch.h")
 add_headerfiles("../../include/luisa/vstl/**.h")
 add_files("**.cpp")
 if is_plat("windows") then

@@ -70,7 +70,7 @@ namespace detail {
 
     // set input
     stream.dst_ptr = reinterpret_cast<uint8_t *>(result.data() + file_offset);
-    stream.dst_size = result.size_bytes() - file_offset;
+    stream.dst_size = luisa::size_bytes(result) - file_offset;
     stream.src_ptr = reinterpret_cast<const uint8_t *>(chunk_data);
     stream.src_size = chunk_size_bytes;
 
@@ -78,9 +78,9 @@ namespace detail {
          stream_state = compression_stream_process(&stream, COMPRESSION_STREAM_FINALIZE)) {
         LUISA_ASSERT(stream_state == COMPRESSION_STATUS_OK, "Failed to compress data.");
         auto offset = stream.dst_ptr - reinterpret_cast<uint8_t *>(result.data());
-        result.resize(result.size_bytes() * 2u);
+        result.resize(luisa::size_bytes(result) * 2u);
         stream.dst_ptr = reinterpret_cast<uint8_t *>(result.data() + offset);
-        stream.dst_size = result.size_bytes() - offset;
+        stream.dst_size = luisa::size_bytes(result) - offset;
     }
     result.resize(stream.dst_ptr - reinterpret_cast<uint8_t *>(result.data()));
     compression_stream_destroy(&stream);
@@ -145,16 +145,13 @@ void MetalDStorageExt::compress(const void *data, size_t size_bytes,
         reinterpret_cast<MetalCompressionFileHeader *>(result.data())->chunk_metadata[chunk] = metadata;
     }
 
-    auto ratio = static_cast<double>(result.size_bytes()) / static_cast<double>(size_bytes);
+    auto ratio = static_cast<double>(luisa::size_bytes(result)) / static_cast<double>(size_bytes);
     LUISA_VERBOSE("Compressed {} bytes to {} bytes (ratio = {}) with {} in {} ms.",
-                  size_bytes, result.size_bytes(), ratio, to_string(algorithm), clk.toc());
+                  size_bytes, luisa::size_bytes(result), ratio, to_string(algorithm), clk.toc());
 }
 
-MetalPinnedMemory::MetalPinnedMemory(MTL::Device *device,
-                                     void *host_ptr,
-                                     size_t size_bytes) noexcept
-    : _host_ptr{host_ptr}, _size_bytes{size_bytes},
-      _offset{0u}, _device_buffer{nullptr} {
+MetalPinnedMemory::MetalPinnedMemory(MTL::Device *device, void *host_ptr, size_t size_bytes, bool write_combined) noexcept
+    : _host_ptr{host_ptr}, _size_bytes{size_bytes}, _offset{0u}, _device_buffer{nullptr} {
     Clock clk;
     auto page_size = pagesize();
     auto host_addr = reinterpret_cast<size_t>(host_ptr);
@@ -166,12 +163,10 @@ MetalPinnedMemory::MetalPinnedMemory(MTL::Device *device,
             "Failed to lock host memory: {}",
             std::strerror(errno));
     } else {
+        auto options = MTL::ResourceHazardTrackingModeTracked | MTL::ResourceStorageModeShared;
+        if (write_combined) { options |= MTL::ResourceCPUCacheModeWriteCombined; }
         _device_buffer = device->newBuffer(
-            reinterpret_cast<void *>(aligned_addr),
-            aligned_size,
-            MTL::ResourceOptionCPUCacheModeWriteCombined |
-                MTL::ResourceStorageModeShared |
-                MTL::ResourceHazardTrackingModeUntracked,
+            reinterpret_cast<void *>(aligned_addr), aligned_size, options,
             ^(void *ptr, NS::UInteger size) noexcept {
                 munlock(reinterpret_cast<void *>(aligned_addr), aligned_size);
                 LUISA_VERBOSE("Unpinned page-aligned memory "
@@ -580,7 +575,7 @@ DeviceInterface *MetalDStorageExt::device() const noexcept { return _device; }
 
 [[nodiscard]] DStorageExt::PinnedMemoryInfo MetalDStorageExt::pin_host_memory(void *ptr, size_t size_bytes) noexcept {
     return with_autorelease_pool([=, this] {
-        auto pinned = luisa::new_with_allocator<MetalPinnedMemory>(_device->handle(), ptr, size_bytes);
+        auto pinned = luisa::new_with_allocator<MetalPinnedMemory>(_device->handle(), ptr, size_bytes, true);
         if (!pinned->valid()) {
             luisa::delete_with_allocator(pinned);
             return PinnedMemoryInfo::make_invalid();

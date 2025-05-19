@@ -10,6 +10,8 @@
 #include <luisa/runtime/context.h>
 
 namespace lc::dx {
+static ID3D12Device *last_device_handle = nullptr;
+
 DirectXHeap DXAllocatorImpl::AllocateBufferHeap(
     luisa::string_view name,
     uint64_t targetSizeInBytes,
@@ -127,12 +129,13 @@ Device::Device(Context &&ctx, DeviceConfig const *settings)
             info.Revision = desc.Revision;
             return vstd::MD5{vstd::span<uint8_t const>{reinterpret_cast<uint8_t const *>(&info), sizeof(AdapterInfo)}};
         };
-
+        bool use_dred = false;
         luisa::optional<DirectXDeviceConfigExt::ExternalDevice> extDevice;
         luisa::optional<DirectXDeviceConfigExt::GPUAllocatorSettings> allocSettings;
         if (deviceSettings) {
             extDevice = deviceSettings->CreateExternalDevice();
             allocSettings = deviceSettings->GetGPUAllocatorSettings();
+            use_dred = deviceSettings->UseDRED();
         }
         if (extDevice) {
             device = {static_cast<ID3D12Device5 *>(extDevice->device), false};
@@ -155,7 +158,35 @@ Device::Device(Context &&ctx, DeviceConfig const *settings)
                     dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
                 }
             }
+            ComPtr<ID3D12DeviceRemovedExtendedDataSettings> pDredSettings;
+            if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pDredSettings)))) {
+                // Turn on AutoBreadcrumbs and Page Fault reporting
+                pDredSettings->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+                pDredSettings->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+#ifdef __ID3D12DeviceRemovedExtendedDataSettings1_INTERFACE_DEFINED__
+                ComPtr<ID3D12DeviceRemovedExtendedDataSettings1> pDredSettings1;
+                if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pDredSettings1)))) {
+                    pDredSettings1->SetBreadcrumbContextEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+                }
 #endif
+                LUISA_WARNING("DRED settings enable");
+            } else {
+                LUISA_WARNING("DRED settings disable");
+            }
+#endif
+            if (use_dred) {
+#ifdef __ID3D12DeviceRemovedExtendedDataSettings2_INTERFACE_DEFINED__
+                ComPtr<ID3D12DeviceRemovedExtendedDataSettings2> pDredSettings2;
+                if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pDredSettings2)))) {
+                    pDredSettings2->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+                    pDredSettings2->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+                    pDredSettings2->UseMarkersOnlyAutoBreadcrumbs(true); // LightweightDRED
+                    LUISA_WARNING("LightweightDRED settings enable");
+                } else {
+                    LUISA_WARNING("LightweightDRED settings disable");
+                }
+#endif
+            }
             ThrowIfFailed(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(dxgiFactory.GetAddressOf())));
             luisa::vector<luisa::string> device_names;
             backend_device_names(device_names);
@@ -268,7 +299,16 @@ Device::Device(Context &&ctx, DeviceConfig const *settings)
                 globalHeap->GetHeap(),
                 samplerHeap->GetHeap());
         }
+        // Test device
+        D3D12_FEATURE_DATA_D3D12_OPTIONS12 options12 = {};
+        if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options12, sizeof(options12)))) {
+            use_enhanced_barrier = options12.EnhancedBarriersSupported;
+        }
+        if (!use_enhanced_barrier) [[unlikely]] {
+            LUISA_WARNING("Enhanced barrier not supported, please update your Windows or GPU driver");
+        }
     }
+    last_device_handle = device.Get();
 }
 bool Device::SupportMeshShader() const {
     D3D12_FEATURE_DATA_D3D12_OPTIONS7 featureData = {};
@@ -294,5 +334,168 @@ uint Device::waveSize() const {
     D3D12_FEATURE_DATA_D3D12_OPTIONS1 waveOption;
     ThrowIfFailed(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS1, &waveOption, sizeof(waveOption)));
     return waveOption.WaveLaneCountMin;
+}
+void process_dxgi_error(HRESULT hr) {
+    // Should match all values from D3D12_AUTO_BREADCRUMB_OP
+    static const wchar_t *OpNames[]{
+        L"SetMarker",
+        L"BeginEvent",
+        L"EndEvent",
+        L"DrawInstanced",
+        L"DrawIndexedInstanced",
+        L"ExecuteIndirect",
+        L"Dispatch",
+        L"CopyBufferRegion",
+        L"CopyTextureRegion",
+        L"CopyResource",
+        L"CopyTiles",
+        L"ResolveSubresource",
+        L"ClearRenderTargetView",
+        L"ClearUnorderedAccessView",
+        L"ClearDepthStencilView",
+        L"ResourceBarrier",
+        L"ExecuteBundle",
+        L"Present",
+        L"ResolveQueryData",
+        L"BeginSubmission",
+        L"EndSubmission",
+        L"DecodeFrame",
+        L"ProcessFrames",
+        L"AtomicCopyBufferUint",
+        L"AtomicCopyBufferUint64",
+        L"ResolveSubresourceRegion",
+        L"WriteBufferImmediate",
+        L"DecodeFrame1",
+        L"SetProtectedResourceSession",
+        L"DecodeFrame2",
+        L"ProcessFrames1",
+        L"BuildRaytracingAccelerationStructure",
+        L"EmitRaytracingAccelerationStructurePostBuildInfo",
+        L"CopyRaytracingAccelerationStructure",
+        L"DispatchRays",
+        L"InitializeMetaCommand",
+        L"ExecuteMetaCommand",
+        L"EstimateMotion",
+        L"ResolveMotionVectorHeap",
+        L"SetPipelineState1",
+        L"InitializeExtensionCommand",
+        L"ExecuteExtensionCommand",
+        L"DispatchMesh",
+        L"EncodeFrame",
+        L"ResolveEncoderOutputMetadata"};
+    static_assert(std::size(OpNames) == D3D12_AUTO_BREADCRUMB_OP_RESOLVEENCODEROUTPUTMETADATA + 1, "OpNames array length mismatch");
+    // Should match all valid values from D3D12_DRED_ALLOCATION_TYPE
+    static const wchar_t *AllocTypesNames[]{
+        L"CommandQueue",
+        L"CommandAllocator",
+        L"PipelineState",
+        L"CommandList",
+        L"Fence",
+        L"DescriptorHeap",
+        L"Heap",
+        L"Unknown",// Unknown type - missing enum value in D3D12_DRED_ALLOCATION_TYPE
+        L"QueryHeap",
+        L"CommandSignature",
+        L"PipelineLibrary",
+        L"VideoDecoder",
+        L"Unknown",// Unknown type - missing enum value in D3D12_DRED_ALLOCATION_TYPE
+        L"VideoProcessor",
+        L"Unknown",// Unknown type - missing enum value in D3D12_DRED_ALLOCATION_TYPE
+        L"Resource",
+        L"Pass",
+        L"CryptoSession",
+        L"CryptoSessionPolicy",
+        L"ProtectedResourceSession",
+        L"VideoDecoderHeap",
+        L"CommandPool",
+        L"CommandRecorder",
+        L"StateObjectr",
+        L"MetaCommand",
+        L"SchedulingGroup",
+        L"VideoMotionEstimator",
+        L"VideoMotionVectorHeap",
+        L"VideoExtensionCommand",
+    };
+    static_assert(std::size(AllocTypesNames) == D3D12_DRED_ALLOCATION_TYPE_VIDEO_EXTENSION_COMMAND - D3D12_DRED_ALLOCATION_TYPE_COMMAND_QUEUE + 1, "AllocTypes array length mismatch");
+    auto GetBreadcrumbContexts = [](const D3D12_AUTO_BREADCRUMB_NODE1 *Node) {
+        return luisa::span<D3D12_DRED_BREADCRUMB_CONTEXT>{Node->pBreadcrumbContexts, Node->BreadcrumbContextsCount};
+    };
+
+    //if (hr != DXGI_ERROR_DEVICE_REMOVED && hr != DXGI_ERROR_DEVICE_HUNG && hr != DXGI_ERROR_DEVICE_RESET) {
+    //    return;
+    //}
+    if (!last_device_handle) {
+        return;
+    }
+    auto pDevice = last_device_handle;
+    last_device_handle = nullptr;
+    ComPtr<ID3D12DeviceRemovedExtendedData1> pDred;
+    if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&pDred)))) {
+        return;
+    }
+
+    D3D12_DRED_AUTO_BREADCRUMBS_OUTPUT1 DredAutoBreadcrumbsOutput;
+    D3D12_DRED_PAGE_FAULT_OUTPUT DredPageFaultOutput;
+    if (FAILED(pDred->GetAutoBreadcrumbsOutput1(&DredAutoBreadcrumbsOutput))) {
+        return;
+    }
+    if (FAILED(pDred->GetPageFaultAllocationOutput(&DredPageFaultOutput))) {
+        return;
+    }
+    luisa::wstring result;
+    result += L"DRED: Last tracked GPU operations:\n";
+
+    luisa::wstring ContextStr;
+    luisa::unordered_map<int32, const wchar_t *> ContextStrings;
+    int TracedCommandLists = 0;
+    auto node = DredAutoBreadcrumbsOutput.pHeadAutoBreadcrumbNode;
+    while (node && node->pLastBreadcrumbValue) {
+        int32 LastCompletedOp = *node->pLastBreadcrumbValue;
+        if (LastCompletedOp != node->BreadcrumbCount && LastCompletedOp != 0) {
+            if (node->pCommandListDebugNameW) {
+                result += luisa::format<luisa::wstring>(L"Command list debug name: {}\n", node->pCommandListDebugNameW);
+            }
+            if (node->pCommandQueueDebugNameW) {
+                result += luisa::format<luisa::wstring>(L"Command queue debug name: {}\n", node->pCommandQueueDebugNameW);
+            }
+            result += luisa::format<luisa::wstring>(L"DRED: {} completed of {}\n", LastCompletedOp, node->BreadcrumbCount);
+            TracedCommandLists++;
+            int32 FirstOp = std::max(LastCompletedOp - 100, 0);
+            int32 LastOp = std::min(LastCompletedOp + 20, int32(node->BreadcrumbCount) - 1);
+            ContextStrings.clear();
+            for (const D3D12_DRED_BREADCRUMB_CONTEXT &Context : GetBreadcrumbContexts(node)) {
+                ContextStrings.emplace(Context.BreadcrumbIndex, Context.pContextString);
+            }
+            for (int32 Op = FirstOp; Op <= LastOp; ++Op) {
+                D3D12_AUTO_BREADCRUMB_OP BreadcrumbOp = node->pCommandHistory[Op];
+                auto OpContextStr = ContextStrings.find(Op);
+                if (OpContextStr) {
+                    ContextStr += OpContextStr->second;
+                } else {
+                    ContextStr.clear();
+                }
+                luisa::wstring OpName = (BreadcrumbOp < std::size(OpNames)) ? OpNames[BreadcrumbOp] : L"Unknown Op";
+                luisa::wstring State = Op < LastCompletedOp ? L"[ok]" : (Op == LastCompletedOp ? L"[Active]" : L"[ ]");
+                result += luisa::format<luisa::wstring>(L"\t{} Op: {}, {} {} {}\n", State, Op, OpName, ContextStr, (Op + 1 == LastCompletedOp) ? L" - LAST COMPLETED" : L"");
+            }
+        }
+        node = node->pNext;
+    }
+    if (TracedCommandLists == 0) {
+        result += L"DRED: No command list found with active outstanding operations (all finished or not started yet)\n";
+    }
+    result += luisa::format<luisa::wstring>(L"page fault VA: {}\n", DredPageFaultOutput.PageFaultVA);
+
+    for (auto node = DredPageFaultOutput.pHeadExistingAllocationNode; node != nullptr; node = node->pNext) {
+        if (node->ObjectNameW) {
+            result += luisa::format<luisa::wstring>(L"Exists object name {}\n", node->ObjectNameW);
+        }
+    }
+    for (auto node = DredPageFaultOutput.pHeadRecentFreedAllocationNode; node != nullptr; node = node->pNext) {
+        if (node->ObjectNameW) {
+            result += luisa::format<luisa::wstring>(L"Freed object name {}\n", node->ObjectNameW);
+        }
+    }
+    LUISA_WARNING(luisa::string(result.begin(), result.end()));
 }
 }// namespace lc::dx

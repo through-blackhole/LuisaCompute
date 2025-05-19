@@ -2,12 +2,12 @@ local enable_gui = get_config("enable_gui")
 -- TEST MAIN with doctest
 ------------------------------------
 
-local function lc_add_app(appname, folder, name)
+local function lc_add_app(appname, folder, name, deps)
     target(appname)
     _config_project({
         project_kind = "binary"
     })
-    set_pcxxheader("pch.h")
+    set_pcxxheader("lc_test_pch.h")
     add_files("common/test_main.cpp")
     add_files("common/test_math_util.cpp")
     add_includedirs("./", {
@@ -20,14 +20,13 @@ local function lc_add_app(appname, folder, name)
         match_str = path.join(name, "**.cpp")
     end
     add_files(path.join("next", folder, match_str))
+
+    -- basic defs
     add_deps("lc-runtime", "lc-dsl", "lc-vstl", "stb-image", "lc-backends-dummy")
-    if get_config("enable_ir") then
-        add_deps("lc-ir")
-        add_deps("lc-rust")
-    end
-    if get_config("enable_gui") then
-        add_deps("lc-gui")
-    end
+    -- extra deps 
+    add_deps(deps)
+
+    -- extra defs 
     if get_config("dx_backend") then
         add_defines("LUISA_TEST_DX_BACKEND")
     end
@@ -40,10 +39,12 @@ local function lc_add_app(appname, folder, name)
     if get_config("metal_backend") then
         add_defines("LUISA_TEST_METAL_BACKEND")
     end
+
     target_end()
 end
 
 -- temp test suites
+lc_add_app("test_next_tensor", "test", "tensor") -- tensor test
 lc_add_app("test_feat", "test", "feat") -- core feature test
 lc_add_app("test_ext_core", "test", "ext/core") -- core extensions
 -- extensions for different backends
@@ -59,8 +60,8 @@ end
 if get_config("enable_gui") then
     add_defines("ENABLE_DISPLAY")
     -- example app 
-    lc_add_app("gallery", "example", "gallery") -- demo
-    lc_add_app("tutorial", "example", "use") -- basic use tutorial
+    lc_add_app("gallery", "example", "gallery", {"lc-gui"}) -- demo
+    lc_add_app("tutorial", "example", "use", {"lc-gui"}) -- basic use tutorial
 end
 -- all test requires more stable dependencies
 -- lc_add_app("test_all", "test", "all") -- all test
@@ -101,6 +102,7 @@ if get_config("enable_ir") then
     test_proj('test_autodiff')
     test_proj('test_autodiff_full')
 end
+
 test_proj("test_helloworld")
 test_proj("test_ast")
 test_proj("test_atomic")
@@ -120,6 +122,7 @@ test_proj("test_win_hdr", true, function()
     end)
 end)
 test_proj("test_path_tracing", true)
+test_proj("test_path_tracing_spectrum", true)
 test_proj("test_path_tracing_hdr", true)
 test_proj("test_path_tracing_camera", true)
 test_proj("test_path_tracing_cutout", true)
@@ -169,17 +172,23 @@ if get_config("dx_backend") then
         test_proj("test_cuda_dx_interop")
     end
     test_proj("test_dml")
+    -- test_proj("test_softmax")
+    -- test_proj("test_matrix_multiply")
+    -- test_proj("test_conv")
+    -- test_proj("test_tensor", false, function()
+    --     add_deps("lc-tensor")
+    -- end)
 end
 test_proj("test_manual_ast")
 if not is_mode("debug") then
     if get_config("enable_clangcxx") then
         test_proj("test_clang_cxx", true, function()
             add_deps("lc-clangcxx")
-            set_pcxxheader("pch.h")
+            set_pcxxheader("lc_test_pch.h")
         end)
         test_proj("test_path_tracing_clangcxx", true, function()
             add_deps("lc-clangcxx")
-            set_pcxxheader("pch.h")
+            set_pcxxheader("lc_test_pch.h")
         end)
         target("clangcxx_compiler")
         _config_project({
@@ -187,7 +196,7 @@ if not is_mode("debug") then
         })
         add_files("clangcxx_compiler.cpp")
         add_deps("lc-runtime", "lc-vstl", "lc-backends-dummy", "lc-clangcxx")
-        set_pcxxheader("pch.h")
+        set_pcxxheader("lc_test_pch.h")
         target_end()
     end
 end
@@ -256,7 +265,7 @@ end
 -- includes("amd")
 if get_config("dx_backend") and enable_fsr3 then
     test_proj("test_fsr3", true, function()
-        set_pcxxheader("pch.h")
+        set_pcxxheader("lc_test_pch.h")
         on_load(function(target)
             local function rela(p)
                 return path.relative(path.absolute(p, os.scriptdir()), os.projectdir())
