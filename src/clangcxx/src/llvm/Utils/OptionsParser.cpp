@@ -105,10 +105,6 @@ llvm::Error OptionsParser::init(int &argc, const char **argv,
         "extra-arg-before",
         cl::desc("Additional argument to prepend to the compiler command line"),
         cl::cat(Category), cl::sub(cl::SubCommand::getAll()));
-<<<<<<< HEAD
-
-=======
->>>>>>> upstream/next
     cl::ResetAllOptionOccurrences();
     cl::HideUnrelatedOptions(Category);
     std::string ErrorMessage;

@@ -4,6 +4,11 @@
 
 namespace luisa::shader {
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmicrosoft-union-member-reference"
+#endif
+
 template<typename T, uint64 N>
 struct [[builtin("vec")]] vec;
 
@@ -102,6 +107,10 @@ struct alignas(16) [[builtin("vec")]] vec<T, 4> {
 #include "ops/swizzle4.inl"
     };
 };
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 template<typename T, uint64 N>
 [[binop("ADD")]] vec<T, N> operator+(T, vec<T, N>);

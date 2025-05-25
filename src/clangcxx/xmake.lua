@@ -1,4 +1,4 @@
-if not is_mode("debug") then
+if is_mode("release") then
     target("lc-clangcxx")
     _config_project({
         project_kind = "shared"
