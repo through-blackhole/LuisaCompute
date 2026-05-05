@@ -6,6 +6,8 @@ if is_mode("release") then
     set_pcxxheader("src/lc_clangcxx_pch.h")
     add_headerfiles("../../include/luisa/clangcxx/**.h")
     add_files("src/**.cpp")
+    -- llvm 20.1 doesn't dllexport member functions defined in a class from generated header
+    add_cxflags("/Zc:dllexportInlines-", { public = true })
     on_load(function(target, opt)
         local libs = {}
         local llvm_path = get_config("llvm_path")

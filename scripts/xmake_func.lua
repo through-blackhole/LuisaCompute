@@ -247,7 +247,7 @@ on_load(function(target)
         })
     else
         target:set("languages", "clatest", "cxx20", {
-            public = true
+            public = false
         })
     end
 
@@ -275,7 +275,7 @@ on_load(function(target)
         })
     elseif is_mode("releasedbg") then
         if not win_runtime then
-            win_runtime = "MDd"
+            win_runtime = "MD"
         end
         if force_optimize then
             target:set("optimize", "aggressive")
