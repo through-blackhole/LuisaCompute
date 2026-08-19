@@ -947,6 +947,13 @@ public:
                         Range(idx.offset_bytes(), idx.size_bytes()),
                         false);
                 }
+                if (auto &&indirect = mesh.indirect_draw_arguments()) {
+                    add_dispatch_handle(
+                        indirect.handle(),
+                        ResourceType::Texture_Buffer,
+                        Range(indirect.offset_bytes(), indirect.size_bytes()),
+                        false);
+                }
             }
         });
     }

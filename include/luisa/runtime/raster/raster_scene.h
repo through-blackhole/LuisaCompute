@@ -49,6 +49,7 @@ class RasterMesh {
     friend class lc::validation::Stream;
     luisa::fixed_vector<VertexBufferView, 4> _vertex_buffers{};
     luisa::variant<BufferView<uint>, uint> _index_buffer;
+    BufferView<uint> _indirect_draw_arguments;
     uint _instance_count{};
     uint _object_id{};
     int _vertex_offset{};
@@ -57,7 +58,8 @@ public:
     [[nodiscard]] auto vertex_offset() const noexcept { return _vertex_offset; }
 
     [[nodiscard]] luisa::span<VertexBufferView const> vertex_buffers() const noexcept { return _vertex_buffers; }
-    [[nodiscard]] auto const& index() const noexcept { return _index_buffer; };
+    [[nodiscard]] auto const &index() const noexcept { return _index_buffer; };
+    [[nodiscard]] auto const &indirect_draw_arguments() const noexcept { return _indirect_draw_arguments; }
     [[nodiscard]] auto instance_count() const noexcept { return _instance_count; }
     [[nodiscard]] auto object_id() const noexcept { return _object_id; }
     RasterMesh(
@@ -70,6 +72,22 @@ public:
           _instance_count(instance_count),
           _object_id(object_id),
           _vertex_offset(vertex_offset) {
+        luisa::enlarge_by(_vertex_buffers, vertex_buffers.size());
+        std::memcpy(_vertex_buffers.data(), vertex_buffers.data(), vertex_buffers.size_bytes());
+    }
+    RasterMesh(
+        luisa::span<VertexBufferView const> vertex_buffers,
+        BufferView<uint> index_buffer,
+        BufferView<uint> indirect_draw_arguments,
+        uint object_id,
+        int vertex_offset = 0) noexcept
+        : _index_buffer(index_buffer),
+          _indirect_draw_arguments(indirect_draw_arguments),
+          _instance_count(1u),
+          _object_id(object_id),
+          _vertex_offset(vertex_offset) {
+        LUISA_ASSERT(indirect_draw_arguments.size_bytes() >= 5u * sizeof(uint),
+                     "Indexed indirect raster arguments require five uints.");
         luisa::enlarge_by(_vertex_buffers, vertex_buffers.size());
         std::memcpy(_vertex_buffers.data(), vertex_buffers.data(), vertex_buffers.size_bytes());
     }

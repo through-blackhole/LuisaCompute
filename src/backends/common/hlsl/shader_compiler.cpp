@@ -111,7 +111,6 @@ static void AddCompileFlags(Vec &args, bool debug) {
         {DXC_ARG_ALL_RESOURCES_BOUND,
          L"-enable-16bit-types",
          DXC_ARG_PACK_MATRIX_ROW_MAJOR,
-         DXC_ARG_AVOID_FLOW_CONTROL,
          L"-HV 2021"});
     if (debug) {
         args.emplace_back(DXC_ARG_DEBUG);

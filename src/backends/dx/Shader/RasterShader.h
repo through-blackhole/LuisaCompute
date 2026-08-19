@@ -7,7 +7,7 @@
 #include <luisa/vstl/hash.h>
 namespace lc::hlsl {
 struct CodegenResult;
-}
+}// namespace lc::hlsl
 namespace lc::dx {
 class ShaderSerializer;
 struct RasterPSOState {
@@ -56,7 +56,7 @@ private:
         vstd::vector<hlsl::Property> &&prop,
         vstd::vector<SavedArgument> &&args,
         ComPtr<ID3D12RootSignature> &&root_sig,
-        vstd::vector<std::pair<vstd::string, Type const*>>&& printers,
+        vstd::vector<std::pair<vstd::string, Type const *>> &&printers,
         vstd::vector<std::byte> &&vert_bin_data,
         vstd::vector<std::byte> &&pixel_bin_data);
     std::mutex _pso_mtx;
@@ -66,6 +66,9 @@ private:
     };
     using PSOMap = vstd::HashMap<RasterPSOState, PsoValue, RasterPSOStateHash, RasterPSOStateEqual>;
     PSOMap _pso_map;
+
+    mutable ComPtr<ID3D12CommandSignature> _draw_indexed_indirect_signature;
+    mutable std::mutex _draw_indexed_indirect_signature_mutex;
 
     // Prepared for indirect
 
@@ -84,6 +87,7 @@ private:
     // mutable std::mutex cmdSigMtx;
 
 public:
+    [[nodiscard]] ID3D12CommandSignature *draw_indexed_indirect_signature() const;
     // ID3D12CommandSignature *CmdSig(size_t vertexCount, bool index);
     ID3D12PipelineState *get_pso(
         vstd::span<GFXFormat const> rtvFormats,
@@ -107,7 +111,7 @@ public:
         vstd::MD5 md5,
         vstd::vector<hlsl::Property> &&prop,
         vstd::vector<SavedArgument> &&args,
-        vstd::vector<std::pair<vstd::string, Type const*>>&& printers,
+        vstd::vector<std::pair<vstd::string, Type const *>> &&printers,
         vstd::vector<std::byte> &&vert_bin_data,
         vstd::vector<std::byte> &&pixel_bin_data);
 

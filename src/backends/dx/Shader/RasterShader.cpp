@@ -494,6 +494,22 @@ ID3D12PipelineState *RasterShader::get_pso(
     }
     return v.pso.Get();
 }
+ID3D12CommandSignature *RasterShader::draw_indexed_indirect_signature() const {
+    std::lock_guard lock{_draw_indexed_indirect_signature_mutex};
+    if (_draw_indexed_indirect_signature) {
+        return _draw_indexed_indirect_signature.Get();
+    }
+    D3D12_INDIRECT_ARGUMENT_DESC argument{};
+    argument.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
+    D3D12_COMMAND_SIGNATURE_DESC desc{
+        .ByteStride = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS),
+        .NumArgumentDescs = 1u,
+        .pArgumentDescs = &argument};
+    ThrowIfFailed(_device->device->CreateCommandSignature(
+        &desc, nullptr, IID_PPV_ARGS(&_draw_indexed_indirect_signature)));
+    return _draw_indexed_indirect_signature.Get();
+}
+
 // Prepared for indirect
 // ID3D12CommandSignature *RasterShader::CmdSig(size_t vertexCount, bool index) {
 //     std::lock_guard lck(cmdSigMtx);
