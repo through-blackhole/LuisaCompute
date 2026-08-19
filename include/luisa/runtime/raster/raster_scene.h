@@ -50,6 +50,8 @@ class RasterMesh {
     luisa::fixed_vector<VertexBufferView, 4> _vertex_buffers{};
     luisa::variant<BufferView<uint>, uint> _index_buffer;
     BufferView<uint> _indirect_draw_arguments;
+    BufferView<uint> _indirect_draw_count;
+    uint _maximum_indirect_draw_count{1u};
     uint _instance_count{};
     uint _object_id{};
     int _vertex_offset{};
@@ -60,6 +62,8 @@ public:
     [[nodiscard]] luisa::span<VertexBufferView const> vertex_buffers() const noexcept { return _vertex_buffers; }
     [[nodiscard]] auto const &index() const noexcept { return _index_buffer; };
     [[nodiscard]] auto const &indirect_draw_arguments() const noexcept { return _indirect_draw_arguments; }
+    [[nodiscard]] auto const &indirect_draw_count() const noexcept { return _indirect_draw_count; }
+    [[nodiscard]] auto maximum_indirect_draw_count() const noexcept { return _maximum_indirect_draw_count; }
     [[nodiscard]] auto instance_count() const noexcept { return _instance_count; }
     [[nodiscard]] auto object_id() const noexcept { return _object_id; }
     RasterMesh(
@@ -72,6 +76,28 @@ public:
           _instance_count(instance_count),
           _object_id(object_id),
           _vertex_offset(vertex_offset) {
+        luisa::enlarge_by(_vertex_buffers, vertex_buffers.size());
+        std::memcpy(_vertex_buffers.data(), vertex_buffers.data(), vertex_buffers.size_bytes());
+    }
+    RasterMesh(
+        luisa::span<VertexBufferView const> vertex_buffers,
+        BufferView<uint> index_buffer,
+        BufferView<uint> indirect_draw_arguments,
+        BufferView<uint> indirect_draw_count,
+        uint maximum_indirect_draw_count,
+        uint object_id,
+        int vertex_offset = 0) noexcept
+        : _index_buffer(index_buffer),
+          _indirect_draw_arguments(indirect_draw_arguments),
+          _indirect_draw_count(indirect_draw_count),
+          _maximum_indirect_draw_count(maximum_indirect_draw_count),
+          _instance_count(1u),
+          _object_id(object_id),
+          _vertex_offset(vertex_offset) {
+        LUISA_ASSERT(indirect_draw_arguments.size_bytes() >= 5u * sizeof(uint),
+                     "Indexed indirect raster arguments require five uints.");
+        LUISA_ASSERT(indirect_draw_count.size_bytes() >= sizeof(uint),
+                     "Indexed indirect raster count requires one uint.");
         luisa::enlarge_by(_vertex_buffers, vertex_buffers.size());
         std::memcpy(_vertex_buffers.data(), vertex_buffers.data(), vertex_buffers.size_bytes());
     }

@@ -954,6 +954,13 @@ public:
                         Range(indirect.offset_bytes(), indirect.size_bytes()),
                         false);
                 }
+                if (auto &&count = mesh.indirect_draw_count()) {
+                    add_dispatch_handle(
+                        count.handle(),
+                        ResourceType::Texture_Buffer,
+                        Range(count.offset_bytes(), count.size_bytes()),
+                        false);
+                }
             }
         });
     }

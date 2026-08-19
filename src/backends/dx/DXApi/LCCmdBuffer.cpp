@@ -479,6 +479,12 @@ public:
                                indirect.offset_bytes(), indirect.size_bytes()),
                     EnhancedBarrierTracker::Usage::IndirectArgs);
             }
+            if (auto &&count = mesh.indirect_draw_count()) {
+                state_tracker->Record(
+                    BufferView(reinterpret_cast<Buffer *>(count.handle()),
+                               count.offset_bytes(), count.size_bytes()),
+                    EnhancedBarrierTracker::Usage::IndirectArgs);
+            }
         }
         for (auto &&i : rtvs) {
             state_tracker->Record(
@@ -1162,9 +1168,16 @@ public:
                         cmdList->IASetIndexBuffer(&idx);
                         if (auto &&indirect = mesh.indirect_draw_arguments()) {
                             auto arguments = reinterpret_cast<Buffer *>(indirect.handle());
+                            auto &&count_view = mesh.indirect_draw_count();
+                            auto count_resource = count_view
+                                                      ? reinterpret_cast<Buffer *>(count_view.handle())
+                                                            ->GetResource()
+                                                      : nullptr;
+                            auto count_offset = count_view ? count_view.offset_bytes() : 0u;
                             cmdList->ExecuteIndirect(
-                                shader->draw_indexed_indirect_signature(), 1u,
-                                arguments->GetResource(), indirect.offset_bytes(), nullptr, 0u);
+                                shader->draw_indexed_indirect_signature(),
+                                mesh.maximum_indirect_draw_count(), arguments->GetResource(),
+                                indirect.offset_bytes(), count_resource, count_offset);
                         } else {
                             cmdList->DrawIndexedInstanced(i.size_bytes() / sizeof(uint), mesh.instance_count(), 0, mesh.vertex_offset(), 0);
                         }
