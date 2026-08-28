@@ -1090,15 +1090,15 @@ public:
                 if (auto &&indirect = mesh.indirect_draw_arguments()) {
                     add_dispatch_handle(
                         indirect.handle(),
-                        ResourceType::Texture_Buffer,
-                        Range(indirect.offset_bytes(), indirect.size_bytes()),
+                        ResourceType::Buffer,
+                        buffer_range(indirect.offset_bytes(), indirect.size_bytes()),
                         false);
                 }
                 if (auto &&count = mesh.indirect_draw_count()) {
                     add_dispatch_handle(
                         count.handle(),
-                        ResourceType::Texture_Buffer,
-                        Range(count.offset_bytes(), count.size_bytes()),
+                        ResourceType::Buffer,
+                        buffer_range(count.offset_bytes(), count.size_bytes()),
                         false);
                 }
             }
