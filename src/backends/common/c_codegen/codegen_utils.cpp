@@ -527,6 +527,9 @@ luisa::string_view Clanguage_CodegenUtils::gen_vec_binary(BinaryOp op, Type cons
             } else if (right_type->is_scalar()) {
                 make_vec(right_type, left_type->dimension(), left_type_name, right_name);
             }
+            auto element_type = left_type->element();
+            auto floating_mod =
+                op == BinaryOp::MOD && element_type->is_float();
             decl_sb << "static ";
             bool ret_is_boolvec = (luisa::to_underlying(op) >= luisa::to_underlying(BinaryOp::LESS));
             if (ret_is_boolvec) {
@@ -537,6 +540,20 @@ luisa::string_view Clanguage_CodegenUtils::gen_vec_binary(BinaryOp op, Type cons
             decl_sb << ' ' << func_name << '(' << left_type_name << " a, "sv << right_type_name << " b){\n"sv << temp_sb;
             luisa::string_view name;
             if (!ret_is_boolvec) {
+                if (floating_mod) {
+                    decl_sb << "return "sv;
+                    auto function = element_type->is_float64() ?
+                                        "fmod"sv :
+                                        "fmodf"sv;
+                    gen_vec_function(
+                        decl_sb,
+                        luisa::format(
+                            "{}({}.#, {}.#)",
+                            function, left_name, right_name),
+                        left_type);
+                    decl_sb << ";\n}\n"sv;
+                    return;
+                }
                 switch (op) {
                     case BinaryOp::ADD:
                         name = "+"sv;
@@ -1421,11 +1438,13 @@ void Clanguage_CodegenUtils::codegen(
         vstd::push_back_all(arg_decs, desc.data(), desc.size());
         arg_decs.emplace_back(' ');
     }
-    vstd::MD5 md5{luisa::span{reinterpret_cast<uint8_t const *>(arg_decs.data()), arg_decs.size_bytes()}};
+    vstd::MD5 md5{luisa::span{
+        reinterpret_cast<uint8_t const *>(arg_decs.data()),
+        arg_decs.size() * sizeof(*arg_decs.data())}};
     auto &md5_data = md5.to_binary();
-    PrintValue<uint64_t>{}(md5_data.data0, sb);
+    PrintValue<ulong>{}(static_cast<ulong>(md5_data.data0), sb);
     sb << ", ";
-    PrintValue<uint64_t>{}(md5_data.data1, sb);
+    PrintValue<ulong>{}(static_cast<ulong>(md5_data.data1), sb);
     sb << "};\n}\n";
     sb << "typedef struct {\n";
     size_t arg_idx = 0;

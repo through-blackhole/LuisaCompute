@@ -38,6 +38,16 @@ void CodegenVisitor::visit(const FuncRefExpr *expr) {
 void CodegenVisitor::visit(const BinaryExpr *expr) {
     auto lhs = expr->lhs();
     auto rhs = expr->rhs();
+    if (expr->op() == BinaryOp::MOD &&
+        lhs->type()->is_scalar() &&
+        lhs->type()->is_float()) {
+        sb << (lhs->type()->is_float64() ? "fmod(" : "fmodf(");
+        lhs->accept(*this);
+        sb << ',';
+        rhs->accept(*this);
+        sb << ')';
+        return;
+    }
     if (lhs->type()->is_scalar() && rhs->type()->is_scalar()) {
         sb << '(';
         lhs->accept(*this);
@@ -371,6 +381,16 @@ void CodegenVisitor::visit(const CallExpr *expr) {
                << luisa::format("{}", args[0]->type()->size())
                << ')';
         } break;
+        case CallOp::UNDEFINED: {
+            // C has no undef expression. A zero compound literal is a legal
+            // concrete refinement of the arbitrary-value contract. This is
+            // already a complete expression, so do not append the generic
+            // call-argument suffix below.
+            sb << "((";
+            utils.get_type_name(sb, expr->type());
+            sb << "){0})";
+            return;
+        }
         case CallOp::ONE: {
             sb << "memone(&(";
             args[0]->accept(*this);

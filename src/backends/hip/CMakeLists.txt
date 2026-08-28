@@ -21,6 +21,7 @@ if (hip_FOUND)
             hip_geometry.h
             hip_procedural_primitive.cpp hip_procedural_primitive.h
             hip_shader.h hip_shader.cpp
+            hip_shader_link_options.h
             hip_shader_metadata.h
             hip_shader_native.h hip_shader_native.cpp
             hip_shader_printer.h hip_shader_printer.cpp
@@ -126,6 +127,9 @@ if (hip_FOUND)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:hiprt_from_source>
             $<TARGET_FILE_DIR:luisa-compute-backend-hip>)
+    install(TARGETS hiprt_from_source
+            LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     # Keep runtime artifacts synchronized even when only an included HIPRT
     # kernel header changes and the backend shared library does not relink.
     add_custom_target(luisa-compute-hiprt-runtime-artifacts
@@ -137,6 +141,11 @@ if (hip_FOUND)
             DEPENDS hiprt_compile_bitcodes)
     add_dependencies(luisa-compute-backend-hip
             luisa-compute-hiprt-runtime-artifacts)
+    install(FILES
+            "${HIPRT_FROM_SOURCE_BITCODE_DIR}/${HIPRT_FROM_SOURCE_LIB_NAME}_${HIP_VERSION_STR}_amd_lib_linux.bc"
+            "${HIPRT_FROM_SOURCE_BITCODE_DIR}/${HIPRT_FROM_SOURCE_LIB_NAME}_${HIP_VERSION_STR}_amd.hipfb"
+            "${HIPRT_FROM_SOURCE_BITCODE_DIR}/oro_compiled_kernels.hipfb"
+            DESTINATION ${CMAKE_INSTALL_BINDIR})
 
     # Add LLVM codegen for HIP
     add_subdirectory(llvm_codegen)
